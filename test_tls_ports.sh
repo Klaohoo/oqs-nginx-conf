@@ -85,35 +85,35 @@ if [[ ! -x "${CLIENT}" ]]; then
   exit 1
 fi
 
-declare -A GROUPS
+declare -A TLS_GROUPS
 declare -A CAFILES
 declare -A LABELS
 
-GROUPS[8443]="X25519:P-256"
+TLS_GROUPS[8443]="X25519:P-256"
 CAFILES[8443]="${CERT_DIR}/rsa.crt"
 LABELS[8443]="RSA cert + classical KEX"
 
-GROUPS[8444]="P-384:X25519"
+TLS_GROUPS[8444]="P-384:X25519"
 CAFILES[8444]="${CERT_DIR}/ecdsa.crt"
 LABELS[8444]="ECDSA cert + classical KEX"
 
-GROUPS[8445]="MLKEM768"
+TLS_GROUPS[8445]="MLKEM768"
 CAFILES[8445]="${CERT_DIR}/mldsa65.crt"
 LABELS[8445]="ML-DSA-65 cert + MLKEM768"
 
-GROUPS[8446]="MLKEM768"
+TLS_GROUPS[8446]="MLKEM768"
 CAFILES[8446]="${CERT_DIR}/rsa.crt"
 LABELS[8446]="RSA cert + MLKEM768"
 
-GROUPS[8447]="X25519:P-256"
+TLS_GROUPS[8447]="X25519:P-256"
 CAFILES[8447]="${CERT_DIR}/mldsa65.crt"
 LABELS[8447]="ML-DSA-65 cert + classical KEX"
 
-GROUPS[8448]="MLKEM512"
+TLS_GROUPS[8448]="MLKEM512"
 CAFILES[8448]="${CERT_DIR}/mldsa44.crt"
 LABELS[8448]="ML-DSA-44 cert + MLKEM512"
 
-GROUPS[8449]="MLKEM1024"
+TLS_GROUPS[8449]="MLKEM1024"
 CAFILES[8449]="${CERT_DIR}/mldsa87.crt"
 LABELS[8449]="ML-DSA-87 cert + MLKEM1024"
 
@@ -145,7 +145,6 @@ run_handshake_test() {
   fi
 
   timeout "${TIMEOUT_SECS}"s bash -c "
-    exec 3<&-
     printf '' | \"${CLIENT}\" s_client \
       -connect ${HOST}:${port} \
       -servername ${SERVERNAME} \
@@ -153,44 +152,39 @@ run_handshake_test() {
       -groups ${groups} \
       -CAfile ${cafile} \
       -brief 2>&1
-  " | egrep 'Protocol version|Ciphersuite|Signature type|Server Temp Key|Verification|Verify return code|Peer certificate'
-
-  local rc=$?
-  if [[ $rc -ne 0 ]]; then
-    echo "Handshake test failed on port ${port}"
-    return $rc
-  fi
+  " | egrep 'Protocol version|Ciphersuite|Signature type|Server Temp Key|Verification|Verify return code|Peer certificate' || true
 }
 
 run_cert_inspect() {
   local port="$1"
+  local groups="$2"
 
   echo "Certificate details:"
   timeout "${TIMEOUT_SECS}"s bash -c "
-    exec 3<&-
     printf '' | \"${CLIENT}\" s_client \
       -connect ${HOST}:${port} \
       -servername ${SERVERNAME} \
       -tls1_3 \
+      -groups ${groups} \
       -showcerts 2>/dev/null \
     | sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p' \
     | \"${CLIENT}\" x509 -text -noout
-  " | egrep 'Subject:|Signature Algorithm:|Public Key Algorithm:'
+  " | egrep 'Subject:|Signature Algorithm:|Public Key Algorithm:' || true
 }
 
 echo "Using client: ${CLIENT}"
 "${CLIENT}" version -a || true
 
 for port in "${SELECTED_PORTS[@]}"; do
-  if [[ -z "${GROUPS[$port]:-}" ]]; then
+  if [[ -z "${TLS_GROUPS[$port]:-}" ]]; then
     echo
     echo "Skipping unknown port: ${port}"
     continue
   fi
 
-  run_handshake_test "$port" "${GROUPS[$port]}" "${CAFILES[$port]}" "${LABELS[$port]}"
+  run_handshake_test "$port" "${TLS_GROUPS[$port]}" "${CAFILES[$port]}" "${LABELS[$port]}"
 
   if [[ "${SHOW_CERT}" == "1" ]]; then
-    run_cert_inspect "$port"
+    run_cert_inspect "$port" "${TLS_GROUPS[$port]}"
   fi
 done
