@@ -9,11 +9,14 @@ fi
 OPENSSL_PREFIX="/opt/openssl-3.5"
 LIBOQS_PREFIX="/opt/liboqs"
 OQSPROV_PREFIX="/opt/oqs-provider"
-OQSPROV_SRC="/usr/local/src/oqs-provider"
+
+SRC_ROOT="/usr/local/src"
+LIBOQS_SRC="${SRC_ROOT}/liboqs"
+OQSPROV_SRC="${SRC_ROOT}/oqs-provider"
 
 if [[ ! -x "${OPENSSL_PREFIX}/bin/openssl" ]]; then
   echo "Missing ${OPENSSL_PREFIX}/bin/openssl"
-  echo "Build/install OpenSSL first"
+  echo "Install/build OpenSSL first"
   exit 1
 fi
 
@@ -28,22 +31,6 @@ else
   OPENSSL_LIBDIR="${OPENSSL_PREFIX}/lib"
 fi
 
-if [[ ! -f "${OPENSSL_LIBDIR}/libssl.so" && ! -f "${OPENSSL_LIBDIR}/libssl.so.3" ]]; then
-  echo "Could not find libssl in ${OPENSSL_LIBDIR}"
-  exit 1
-fi
-
-if [[ ! -f "${OPENSSL_LIBDIR}/libcrypto.so" && ! -f "${OPENSSL_LIBDIR}/libcrypto.so.3" ]]; then
-  echo "Could not find libcrypto in ${OPENSSL_LIBDIR}"
-  exit 1
-fi
-
-if [[ ! -f "${LIBOQS_PREFIX}/lib/liboqs.so" && ! -f "${LIBOQS_PREFIX}/lib64/liboqs.so" && ! -f "${LIBOQS_PREFIX}/lib/liboqs.so.0" && ! -f "${LIBOQS_PREFIX}/lib64/liboqs.so.0" ]]; then
-  echo "Could not find liboqs under ${LIBOQS_PREFIX}"
-  echo "Build/install liboqs first"
-  exit 1
-fi
-
 OPENSSL_SSL_LIBRARY="${OPENSSL_LIBDIR}/libssl.so"
 OPENSSL_CRYPTO_LIBRARY="${OPENSSL_LIBDIR}/libcrypto.so"
 
@@ -55,6 +42,18 @@ if [[ ! -f "${OPENSSL_CRYPTO_LIBRARY}" && -f "${OPENSSL_LIBDIR}/libcrypto.so.3" 
   OPENSSL_CRYPTO_LIBRARY="${OPENSSL_LIBDIR}/libcrypto.so.3"
 fi
 
+apt-get update
+apt-get install -y \
+  build-essential \
+  cmake \
+  ninja-build \
+  git \
+  curl \
+  ca-certificates \
+  perl \
+  pkg-config \
+  zlib1g-dev
+
 export PATH="${OPENSSL_PREFIX}/bin:${PATH}"
 export LD_LIBRARY_PATH="${OPENSSL_LIBDIR}:${LIBOQS_PREFIX}/lib:${LIBOQS_PREFIX}/lib64:${LD_LIBRARY_PATH:-}"
 export PKG_CONFIG_PATH="${OPENSSL_LIBDIR}/pkgconfig:${LIBOQS_PREFIX}/lib/pkgconfig:${LIBOQS_PREFIX}/lib64/pkgconfig:${PKG_CONFIG_PATH:-}"
@@ -62,7 +61,27 @@ export PKG_CONFIG_PATH="${OPENSSL_LIBDIR}/pkgconfig:${LIBOQS_PREFIX}/lib/pkgconf
 unset OPENSSL_CONF
 unset OPENSSL_MODULES
 
-mkdir -p /usr/local/src
+mkdir -p "${SRC_ROOT}"
+
+rm -rf "${LIBOQS_SRC}"
+git clone --depth 1 https://github.com/open-quantum-safe/liboqs.git "${LIBOQS_SRC}"
+
+cmake -S "${LIBOQS_SRC}" -B "${LIBOQS_SRC}/build" -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX="${LIBOQS_PREFIX}" \
+  -DBUILD_SHARED_LIBS=ON
+
+cmake --build "${LIBOQS_SRC}/build" -j"$(nproc)"
+cmake --install "${LIBOQS_SRC}/build"
+
+printf '%s\n' \
+  "${OPENSSL_LIBDIR}" \
+  "${LIBOQS_PREFIX}/lib" \
+  "${LIBOQS_PREFIX}/lib64" \
+  | awk 'NF' | sort -u >/etc/ld.so.conf.d/oqs-client.conf
+
+ldconfig
+
 rm -rf "${OQSPROV_SRC}"
 git clone --depth 1 https://github.com/open-quantum-safe/oqs-provider.git "${OQSPROV_SRC}"
 
@@ -152,9 +171,9 @@ openssl list -signature-algorithms -provider default -provider oqsprovider | gre
 openssl list -tls-groups | egrep 'MLKEM|X25519|P-256|P-384' || true
 
 echo
-echo "Recovery complete."
-echo "Use this in new shells:"
+echo "Done."
+echo "In new shells run:"
 echo "  source /etc/profile.d/oqs-client-env.sh"
 echo
-echo "Example test:"
+echo "Example:"
 echo "  echo | openssl s_client -connect YOUR_SERVER_IP:8445 -servername localhost -tls1_3 -groups MLKEM768"
