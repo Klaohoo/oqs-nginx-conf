@@ -144,6 +144,7 @@ run_client_for_port() {
     -p "${port}" \
     -s "${SERVERNAME}" \
     -t "${TIMEOUT_SECS}" \
+    --keylog-dir "${OUTDIR}" \
     --showcert || true
 }
 
