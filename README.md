@@ -23,6 +23,21 @@ generating tls pcaps showcasing classical, hybrid, and pqc algorithms
 - **MLKEM768**
 - **MLKEM1024**
 
+## PCAP Contents
+
+The PCAPs contain TLS1.3 traffic, captured from the client, establishing a connection to the server via openssl s_client. The exact command used is:
+
+timeout 5s /opt/openssl-3.5/bin/openssl s_client \
+  -connect SERVER:PORT \
+  -servername localhost \
+  -tls1_3 \
+  -groups ALGORITHM \
+  -CAfile CERTIFICATE \
+  -keylogfile SECRETKEY \
+  -showcerts
+
+
+
 ## Port-by-Port Summary
 
 | Port | Certificate Algorithm | Certificate Key Type | TLS Key Exchange Group(s) | Description |
